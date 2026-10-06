@@ -1,4 +1,4 @@
-# 通过 GitHub REST API 把当前提交推到远端仓库。
+﻿# 通过 GitHub REST API 把当前提交推到远端仓库。
 #
 # 为什么需要它：部分网络对 github.com 的 git-over-HTTPS 传输会中途重置连接
 # （api.github.com 却是通的），表现为 `git push` 报 "Failed to connect / Connection reset"。

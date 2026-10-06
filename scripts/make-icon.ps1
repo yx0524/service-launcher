@@ -1,4 +1,4 @@
-# 生成应用图标：assets/icon.ico / icon.png / icon-alert.png
+﻿# 生成应用图标：assets/icon.ico / icon.png / icon-alert.png
 # 设计：深色圆角徽章 + 蓝色描边 + 绿色播放三角（对应界面里的「启动」按钮）
 # 用法：pwsh -File scripts\make-icon.ps1
 param([string]$OutDir = (Join-Path $PSScriptRoot '..\assets'))
