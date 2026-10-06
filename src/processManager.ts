@@ -664,6 +664,27 @@ export class ProcessManager {
     return 0;
   }
 
+  /**
+   * 自动识别端口：把这一份进程「整棵树」正在监听的端口都收上来。
+   *
+   * 只看根进程不够 —— 启动器是用 cmd 拉起的，真正在监听的是它的子进程
+   * （python / node / java…）；Windows 服务也一样，监听的是包装器的子进程。
+   * 配置里手填的端口只用来看状态，这里返回的是实际在听的，直接显示在列表里。
+   */
+  private portsOfTree(
+    listeners: Map<number, number[]>,
+    table: ProcInfo[],
+    rootPid: number,
+    configured?: number
+  ): number[] {
+    const ports = new Set<number>();
+    if (configured !== undefined) ports.add(configured);
+    for (const pid of collectTreeWith(this.tableIndex(table), rootPid)) {
+      for (const port of listeners.get(pid) ?? []) ports.add(port);
+    }
+    return [...ports].sort((a, b) => a - b);
+  }
+
   private handleStderr(runtime: Runtime, content: string): void {
     const conflictPort = parsePortConflict(content);
     if (conflictPort !== undefined) {
@@ -1072,7 +1093,7 @@ export class ProcessManager {
         runtime.serviceName = serviceName;
         runtime.pid = state.pid;
         runtime.external = false;
-        runtime.ports = state.pid ? listeners.get(state.pid) ?? [] : [];
+        runtime.ports = state.pid ? this.portsOfTree(listeners, table, state.pid) : [];
         if (runtime.readySince === undefined) runtime.readySince = Date.now();
         if (!runtime.startedAt) runtime.startedAt = runtime.readySince;
         this.emit(runtime);
@@ -1115,7 +1136,8 @@ export class ProcessManager {
     runtime.pid = ownerPid > 0 ? ownerPid : undefined;
     // 端口实际持有者常常是我们拉起的 cmd 的子进程，"不是同一个 PID" 不等于"外部启动"
     runtime.external = ownerPid > 0 && ownerPid !== trackedPid && !trackedAlive;
-    runtime.ports = ownerPid > 0 ? listeners.get(ownerPid) ?? (port ? [port] : []) : [];
+    runtime.ports =
+      ownerPid > 0 ? this.portsOfTree(listeners, table, ownerPid, port) : port !== undefined ? [port] : [];
 
     if (ready) {
       runtime.healthFailures = 0;
