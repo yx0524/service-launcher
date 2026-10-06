@@ -12,6 +12,10 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+# 中文路径/提交信息要按 UTF-8 处理，否则 PowerShell 5.1 会按 GBK 解出问号
+$OutputEncoding = [System.Text.Encoding]::UTF8
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+
 $api = "https://api.github.com/repos/$Repo"
 $token = (& gh auth token).Trim()
 $headers = @{
@@ -22,7 +26,10 @@ $headers = @{
 
 function Invoke-Api([string]$uri, [string]$method, $body) {
   if ($null -eq $body) { return Invoke-RestMethod -Uri $uri -Method $method -Headers $headers }
-  return Invoke-RestMethod -Uri $uri -Method $method -Headers $headers -ContentType 'application/json' -Body ($body | ConvertTo-Json -Depth 8 -Compress)
+  # 必须带 charset，否则 PowerShell 会把中文按 Latin1 发出去变成 ?
+  $json = $body | ConvertTo-Json -Depth 8 -Compress
+  $bytes = [System.Text.Encoding]::UTF8.GetBytes($json)
+  return Invoke-RestMethod -Uri $uri -Method $method -Headers $headers -ContentType 'application/json; charset=utf-8' -Body $bytes
 }
 
 $files = @(& git ls-files)
