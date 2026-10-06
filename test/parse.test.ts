@@ -6,6 +6,7 @@ import {
   isAccessDenied,
   inferPort,
   matchCommandLine,
+  matchProcess,
   parseListeners,
   parsePortConflict,
   summarizeError,
@@ -75,4 +76,15 @@ test('decodeOutput 把 sc.exe 的 GBK 输出还原成中文（旧行为是一圈
   // 纯 ASCII / 已经是 UTF-8 的内容不乱动
   assert.equal(decodeOutput(Buffer.from('FAILED 1060', 'utf8')), 'FAILED 1060');
   assert.equal(decodeOutput(Buffer.from('中文 UTF-8 输出', 'utf8')), '中文 UTF-8 输出');
+});
+
+test('matchProcess 认命令行；命令行读不到时用进程名兜底（跨管理员权限的情况）', () => {
+  const exe = 'C:\\Users\\yasin\\AppData\\Roaming\\npm\\node_modules\\cc-connect\\bin\\cc-connect.exe';
+  // 普通权限：命令行可读
+  assert.equal(matchProcess({ name: 'cc-connect.exe', commandLine: `"${exe}"` }, 'bin\\cc-connect.exe'), true);
+  // 高完整性进程（提权启动器拉起的子进程）：命令行读不到，只剩进程名
+  assert.equal(matchProcess({ name: 'cc-connect.exe', commandLine: '' }, 'bin\\cc-connect.exe'), true);
+  // 不能误伤别的进程
+  assert.equal(matchProcess({ name: 'node.exe', commandLine: '' }, 'bin\\cc-connect.exe'), false);
+  assert.equal(matchProcess({ name: 'cc-connect-helper.exe', commandLine: '' }, 'bin\\cc-connect.exe'), false);
 });

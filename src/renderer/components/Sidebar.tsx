@@ -9,6 +9,7 @@ import {
   Plus,
   Power,
   Settings,
+  ShieldCheck,
   Stethoscope,
   Trash2,
   Upload,
@@ -45,12 +46,14 @@ export default function Sidebar({
   const view = useAppStore((s) => s.view);
   const setView = useAppStore((s) => s.setView);
   const [autoLaunch, setAutoLaunch] = useState(false);
+  const [elevated, setElevated] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [dragId, setDragId] = useState<string | null>(null);
   const [overId, setOverId] = useState<string | null>(null);
 
   useEffect(() => {
     void window.electronAPI.getAutoLaunch().then(setAutoLaunch);
+    void window.electronAPI.isElevated().then(setElevated);
   }, []);
 
   const runningInGroup = (groupId: string) =>
@@ -91,7 +94,17 @@ export default function Sidebar({
   return (
     <div className="relative w-56 bg-gray-800 border-r border-gray-700 flex flex-col min-h-0 flex-shrink-0">
       <div className="p-4 border-b border-gray-700">
-        <h1 className="text-base font-bold text-white truncate">进程启动器</h1>
+        <h1 className="text-base font-bold text-white truncate flex items-center gap-2">
+          进程启动器
+          {elevated ? (
+            <span
+              className="text-[11px] font-normal px-1.5 py-0.5 rounded bg-emerald-600/25 text-emerald-300 flex items-center gap-1 flex-shrink-0"
+              title="以管理员身份运行，启停 Windows 服务不会再弹 UAC"
+            >
+              <ShieldCheck size={11} /> 管理员
+            </span>
+          ) : null}
+        </h1>
       </div>
 
       <div className="flex-1 overflow-y-auto scrollbar-thin p-3 space-y-1">
@@ -270,6 +283,26 @@ export default function Sidebar({
               }}
             >
               <Wrench size={14} /> 路径体检
+            </button>
+            <button
+              className={`${menuItem} ${elevated ? 'opacity-50 cursor-default hover:bg-transparent' : ''}`}
+              disabled={elevated}
+              onClick={async () => {
+                setMenuOpen(false);
+                if (elevated) return;
+                if (
+                  !confirm(
+                    '以管理员身份重启启动器？\n\n· Windows 会弹一次 UAC，请点「是」\n· 会先停掉本启动器拉起的服务，再以管理员身份重新启动\n· 提权后启停 Windows 服务就不再弹授权框了'
+                  )
+                ) {
+                  return;
+                }
+                const result = await window.electronAPI.restartAsAdmin();
+                if (!result.success) alert(`以管理员身份重启失败：${result.error || '未知错误'}`);
+              }}
+              title={elevated ? '当前已经是管理员身份运行' : '重新以管理员身份启动（启停服务不再弹 UAC）'}
+            >
+              <ShieldCheck size={14} /> {elevated ? '已是管理员权限' : '以管理员身份重启'}
             </button>
             <div className="my-1 border-t border-gray-700" />
             <button

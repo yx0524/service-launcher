@@ -226,6 +226,10 @@ export interface ElectronAPI {
   setZoomFactor: (factor: number) => void;
   getZoomFactor: () => number;
   rendererReady: () => void;
+  /** 当前是不是以管理员身份在跑。 */
+  isElevated: () => Promise<boolean>;
+  /** 以管理员身份重启（会弹一次 UAC，然后本进程退出、提权实例接管）。 */
+  restartAsAdmin: () => Promise<SimpleResult>;
   /** 退出启动器（会先停掉所有托管服务）。 */
   quit: () => void;
 

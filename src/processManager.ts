@@ -25,7 +25,7 @@ import {
   waitForExit,
   type ProcInfo,
 } from './probe';
-import { inferPort, matchCommandLine, parsePortConflict, summarizeError } from './parse';
+import { inferPort, matchProcess, parsePortConflict, summarizeError } from './parse';
 import { loadStore } from './config';
 import { serviceIdForApp } from './serviceBuilder';
 import { controlServiceSmart } from './serviceInstaller';
@@ -587,6 +587,23 @@ export class ProcessManager {
    * 服务反而被重启搞坏。
    */
   private async restartRuntime(appConfig: AppConfig, proc: ProcessConfig, runtime: Runtime): Promise<void> {
+    // 先确认「是不是已经有一份在跑」：手工启动的、或者程序自己转成后台的。
+    // 有的话直接认下来，别再拉一份去抢单实例锁 —— 否则会陷入
+    // 拉起→被锁挡下退出→再拉起 的循环，界面上一直闪「异常」。
+    const live = await this.findLiveOwner(proc, runtime);
+    if (live > 0) {
+      runtime.state = 'running';
+      runtime.ready = true;
+      runtime.pid = live;
+      runtime.external = true;
+      runtime.errorHint = undefined;
+      runtime.autoRestartAttempts = 0;
+      if (runtime.readySince === undefined) runtime.readySince = Date.now();
+      this.emit(runtime);
+      this.pushLog(runtime, 'system', `已有一份在运行（PID ${live}），不再重复启动`);
+      return;
+    }
+
     const pids = new Set<number>();
     if (runtime.child?.pid) pids.add(runtime.child.pid);
     if (runtime.pid) pids.add(runtime.pid);
@@ -619,6 +636,32 @@ export class ProcessManager {
     }
 
     await this.spawnProcess(appConfig, proc, runtime);
+  }
+
+  /**
+   * 找一份「活着、但不是我们这次拉起来的那份」的实例：
+   * 端口持有者，或者命令行/进程名命中关键字。
+   */
+  private async findLiveOwner(proc: ProcessConfig, runtime: Runtime): Promise<number> {
+    const port = this.effectivePort(proc);
+    if (port === undefined && !proc.match) return 0;
+
+    const [listeners, snapshot] = await Promise.all([
+      port !== undefined ? getListeners() : Promise.resolve(new Map<number, number[]>()),
+      proc.match ? getProcessTable(0) : Promise.resolve({ data: [] as ProcInfo[], at: 0 }),
+    ]);
+
+    const own = runtime.child?.pid;
+    if (port !== undefined) {
+      for (const [pid, ports] of listeners) {
+        if (ports.includes(port) && pid !== own) return pid;
+      }
+    }
+    if (proc.match) {
+      const hit = this.findByMatch(snapshot.data, proc.match, own);
+      if (hit > 0) return hit;
+    }
+    return 0;
   }
 
   private handleStderr(runtime: Runtime, content: string): void {
@@ -1132,7 +1175,7 @@ export class ProcessManager {
   }
 
   private findByMatch(table: ProcInfo[], keyword: string, preferredRoot?: number): number {
-    const hits = table.filter((p) => matchCommandLine(p.commandLine, keyword));
+    const hits = table.filter((p) => matchProcess({ name: p.name, commandLine: p.commandLine }, keyword));
     if (hits.length === 0) return 0;
     if (preferredRoot) {
       const tree = collectTreeWith(this.tableIndex(table), preferredRoot);

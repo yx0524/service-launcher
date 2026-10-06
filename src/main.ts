@@ -1,4 +1,5 @@
 import { BrowserWindow, Notification, app, dialog, ipcMain, screen } from 'electron';
+import fs from 'node:fs';
 import path from 'node:path';
 import started from 'electron-squirrel-startup';
 import { ProcessManager } from './processManager';
@@ -8,7 +9,8 @@ import { isConfigReadable, loadStore, pruneLogs, saveStore, upsertApp, type Wind
 import { pruneMetrics } from './metrics';
 import { assetsDir, existingAsset } from './paths';
 import { controlServiceSmart, installService, uninstallService } from './serviceInstaller';
-import type { ProcessStatus } from './types';
+import { runFile } from './probe';
+import type { ProcessStatus, SimpleResult } from './types';
 
 if (started) {
   app.quit();
@@ -42,8 +44,22 @@ let trayUpdateTimer: NodeJS.Timeout | null = null;
  *   进程启动器.exe --service-install <appId>
  *   进程启动器.exe --service-uninstall <appId>
  *   进程启动器.exe --service-control <appId> <start|stop>
+ *   进程启动器.exe --restart-as-admin
  */
 function runServiceCli(): boolean {
+  if (process.argv.includes('--restart-as-admin')) {
+    void (async () => {
+      const result = await restartAsAdmin();
+      console.log(JSON.stringify(result));
+      if (!result.success) {
+        app.exit(1);
+        return;
+      }
+      setTimeout(() => void quitApplication(), 700);
+    })();
+    return true;
+  }
+
   const installIndex = process.argv.indexOf('--service-install');
   const uninstallIndex = process.argv.indexOf('--service-uninstall');
   const controlIndex = process.argv.indexOf('--service-control');
@@ -321,6 +337,84 @@ async function startAllApps(): Promise<void> {
   scheduleTrayUpdate();
 }
 
+let elevatedCache: boolean | null = null;
+
+/** 当前进程是不是管理员身份（提权后菜单项要显示成「已是管理员」）。 */
+async function isElevated(): Promise<boolean> {
+  if (process.platform !== 'win32') return false;
+  if (elevatedCache !== null) return elevatedCache;
+  const result = await runFile('whoami.exe', ['/groups'], undefined, 8000);
+  elevatedCache = /S-1-16-(12288|16384)/.test(result.output);
+  return elevatedCache;
+}
+
+/**
+ * 以管理员身份重启启动器。
+ *
+ * Windows 不能给运行中的进程就地提权，只能另起一个提权实例；
+ * 而新实例要拿单实例锁，就得等本进程先退出。所以这里让一段提权脚本
+ * 「先弹 UAC 提权 → 等本进程退出 → 再启动启动器」。
+ */
+async function restartAsAdmin(): Promise<{ success: boolean; error?: string }> {
+  if (process.platform !== 'win32') return { success: false, error: '只有 Windows 需要提权' };
+  if (await isElevated()) return { success: false, error: '当前已经是管理员身份' };
+
+  const exe = process.execPath;
+  const dir = path.join(app.getPath('temp'), `launcher-elevate-${Date.now()}`);
+  const scriptPath = path.join(dir, 'restart-as-admin.ps1');
+  const quote = (value: string) => `'${value.replace(/'/g, "''")}'`;
+  const script = [
+    "$ErrorActionPreference = 'Stop'",
+    '$me = [Security.Principal.WindowsIdentity]::GetCurrent()',
+    '$admin = (New-Object Security.Principal.WindowsPrincipal($me)).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)',
+    'if (-not $admin) {',
+    '  try {',
+    // -WindowStyle Hidden：提权脚本自己不要弹控制台窗口，否则重启后会留一个黑框
+    "    Start-Process -FilePath 'powershell.exe' -Verb RunAs -WindowStyle Hidden -ErrorAction Stop -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File', $PSCommandPath)",
+    '    exit 0',
+    '  } catch {',
+    "    Write-Output 'UAC_CANCELED'",
+    '    exit 1',
+    '  }',
+    '}',
+    `Wait-Process -Id ${process.pid} -ErrorAction SilentlyContinue`,
+    'Start-Sleep -Milliseconds 600',
+    `Start-Process -FilePath ${quote(exe)} -WorkingDirectory ${quote(path.dirname(exe))}`,
+    'Start-Sleep -Milliseconds 800',
+    // 收工前把这段临时脚本连目录一起删掉（删不掉就留着，%TEMP% 里无害）
+    'Remove-Item -LiteralPath (Split-Path -Parent $PSCommandPath) -Recurse -Force -ErrorAction SilentlyContinue',
+    'exit 0',
+  ].join('\r\n');
+
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+    // 必须带 BOM：中文系统上 PowerShell 5.1 会按 GBK 读脚本，中文路径会被读坏
+    fs.writeFileSync(scriptPath, `\uFEFF${script}`, 'utf8');
+    const result = await runFile(
+      'powershell.exe',
+      ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', scriptPath],
+      undefined,
+      60000
+    );
+    if (!result.ok || result.output.includes('UAC_CANCELED')) {
+      try {
+        fs.rmSync(dir, { recursive: true, force: true });
+      } catch {
+        /* ignore */
+      }
+      return { success: false, error: '已取消管理员授权（UAC 弹窗没点「是」）' };
+    }
+    return { success: true };
+  } catch (error) {
+    try {
+      fs.rmSync(dir, { recursive: true, force: true });
+    } catch {
+      /* ignore */
+    }
+    return { success: false, error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
 async function quitApplication(): Promise<void> {
   if (quitting) return;
   quitting = true;
@@ -377,6 +471,16 @@ app.whenReady().then(() => {
   });
 
   ipcMain.on('quit-app', () => app.quit());
+
+  ipcMain.handle('is-elevated', () => isElevated());
+
+  ipcMain.handle('restart-as-admin', async (): Promise<SimpleResult> => {
+    const result = await restartAsAdmin();
+    if (!result.success) return { success: false, error: result.error };
+    // 提权脚本在等本进程退出（好释放单实例锁），留点时间让界面把提示显示出来
+    setTimeout(() => void quitApplication(), 700);
+    return { success: true };
+  });
 
   manager.setApps(loadStore().apps);
   manager.start();

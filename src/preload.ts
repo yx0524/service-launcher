@@ -57,6 +57,8 @@ const api: ElectronAPI = {
   },
   getZoomFactor: () => webFrame.getZoomFactor(),
   rendererReady: () => ipcRenderer.send('renderer-ready'),
+  isElevated: () => ipcRenderer.invoke('is-elevated'),
+  restartAsAdmin: () => ipcRenderer.invoke('restart-as-admin'),
   quit: () => ipcRenderer.send('quit-app'),
 
   showAppContextMenu: (appId, isRunning) =>

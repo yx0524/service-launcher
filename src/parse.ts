@@ -86,6 +86,23 @@ export function isAccessDenied(output: string): boolean {
   return /(失败|FAILED)\s*5\b/i.test(output) || /拒绝访问|Access is denied/i.test(output);
 }
 
+/**
+ * 用关键字认进程。
+ *
+ * 命令行优先（能认出 `node bot.js` 这种）；但跨完整性级别时读不到命令行 ——
+ * 比如启动器以管理员身份重启过，它拉起的子进程就是高完整性，
+ * 普通权限下再去查这些进程的 CommandLine 是空的。这时用「可执行文件名」兜底，
+ * 否则会认不出正在运行的实例，又去启动一份，两边抢单实例锁。
+ */
+export function matchProcess(
+  info: { name: string; commandLine: string },
+  keyword: string
+): boolean {
+  if (matchCommandLine(info.commandLine, keyword)) return true;
+  const base = keyword.split(/[\\/]/).pop() ?? '';
+  return base.length > 3 && info.name.toLowerCase() === base.toLowerCase();
+}
+
 /** 把 stderr 尾巴翻译成一句人话。 */
 export function summarizeError(stderrTail: string, exitCode: number | null): string {
   const tail = (stderrTail || '').trim();
