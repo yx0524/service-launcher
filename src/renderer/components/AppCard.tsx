@@ -360,7 +360,7 @@ export default function AppCard({ app, compact, onEdit }: AppCardProps) {
                     onClick={async (e) => {
                       e.stopPropagation();
                       const text = `${app.name} / ${status.processId}\n${parts.join(' · ')}\n\n${status.stderrTail || ''}`;
-                      await navigator.clipboard.writeText(text).catch(() => undefined);
+                      await navigator.clipboard.writeText(text).catch((): void => undefined);
                     }}
                     className="px-1.5 py-0.5 rounded bg-gray-700 hover:bg-gray-600 text-gray-200 flex-shrink-0"
                     title="复制错误信息"

@@ -1,7 +1,7 @@
 {
   "compilerOptions": {
     "target": "ESNext",
-    "module": "commonjs",
+    "module": "ESNext",
     "jsx": "react-jsx",
     "allowJs": true,
     "skipLibCheck": true,
@@ -10,7 +10,10 @@
     "sourceMap": true,
     "baseUrl": ".",
     "outDir": "dist",
-    "moduleResolution": "node",
-    "resolveJsonModule": true
-  }
+    "moduleResolution": "bundler",
+    "resolveJsonModule": true,
+    "allowImportingTsExtensions": true,
+    "noEmit": true
+  },
+  "exclude": ["node_modules", ".vite", "out-zip", "out", "dist"]
 }

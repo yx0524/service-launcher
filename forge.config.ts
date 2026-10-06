@@ -11,7 +11,6 @@ const config: ForgeConfig = {
     asar: true,
     // Use ASCII output folder/name to avoid Windows toolchain issues on non-ASCII paths
     name: 'launcher-app-new',
-    out: 'out-zip',
     icon: 'assets/icon.ico',
   },
   rebuildConfig: {},

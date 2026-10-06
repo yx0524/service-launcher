@@ -23,7 +23,7 @@ export function useKeyboardShortcuts(handlers: ShortcutHandlers): void {
   useEffect(() => {
     const isMac = navigator.platform.toUpperCase().includes('MAC');
 
-    const onKeyDown = (event: KeyboardEvent) => {
+    const onKeyDown = (event: KeyboardEvent): void => {
       const modifier = isMac ? event.metaKey : event.ctrlKey;
       const handlers = ref.current;
       const run = (fn?: () => void) => {

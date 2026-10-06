@@ -28,6 +28,7 @@ import {
 } from './probe';
 import { inferPort, matchCommandLine, parsePortConflict, summarizeError } from './parse';
 import { loadStore } from './config';
+import { serviceIdForApp } from './serviceBuilder';
 import { appendMetrics, type MetricSample } from './metrics';
 import { evaluatePreflight, expandEnvVars, firstToken, looksLikePath, parseModuleList, type PreflightIssue } from './preflight';
 
@@ -158,7 +159,10 @@ export class ProcessManager {
   start(): void {
     if (this.timer) return;
     if (!this.metricsTimer) {
-      this.metricsTimer = setInterval(() => void this.sampleMetrics(), METRICS_INTERVAL_MS);
+      this.metricsTimer = setInterval(
+        () => void this.sampleMetrics().catch((error) => console.error('指标采样失败:', error)),
+        METRICS_INTERVAL_MS
+      );
     }
     this.scheduleNextTick();
   }
@@ -317,8 +321,8 @@ export class ProcessManager {
   /** 查一个 PID 的进程名，用于「端口被谁占了」这类提示。 */
   private async describePid(pid: number): Promise<string> {
     try {
-      const table = await getProcessTable();
-      return table.find((p) => p.pid === pid)?.name ?? '';
+      const { data } = await getProcessTable();
+      return data.find((p) => p.pid === pid)?.name ?? '';
     } catch {
       return '';
     }
@@ -805,7 +809,7 @@ export class ProcessManager {
       if (includeExternal) return true;
       return Boolean(runtime.child) || runtime.trackedAlive;
     });
-    await Promise.all(targets.map((runtime) => this.stopRuntime(runtime).catch(() => undefined)));
+    await Promise.all(targets.map((runtime) => this.stopRuntime(runtime).catch((): void => undefined)));
   }
 
   /* ---------------- 检测 ---------------- */
@@ -961,6 +965,20 @@ export class ProcessManager {
     }
   }
 
+  /**
+   * 配置里记的服务名可能过期（服务改过名、导入过旧配置）。
+   * 配置名没在跑的时候，再按启动器自己的命名约定 LauncherSvc-<appId> 查一次，
+   * 查到就用它，免得界面上把正在跑的服务显示成「未安装 / 已停止」。
+   */
+  private async resolveServiceName(appId: string, configured: string): Promise<string> {
+    const configuredState = await queryServiceState(configured);
+    if (configuredState.running) return configured;
+    const fallback = serviceIdForApp(appId);
+    if (fallback === configured) return configured;
+    const fallbackState = await queryServiceState(fallback);
+    return fallbackState.exists ? fallback : configured;
+  }
+
   private async evaluate(
     appConfig: AppConfig,
     proc: ProcessConfig,
@@ -991,14 +1009,15 @@ export class ProcessManager {
 
     // 由 Windows 服务托管的进程：状态直接问服务，比查进程表准（服务进程在 session 0，命令行读不到）
     if (proc.service) {
-      const state = await queryServiceState(proc.service);
+      const serviceName = await this.resolveServiceName(appConfig.id, proc.service);
+      const state = await queryServiceState(serviceName);
       if (!state.exists) {
         runtime.state = 'error';
-        runtime.errorHint = `Windows 服务「${proc.service}」未安装`;
+        runtime.errorHint = `Windows 服务「${serviceName}」未安装`;
         runtime.pid = undefined;
         runtime.ports = [];
         runtime.ready = false;
-        runtime.serviceName = proc.service;
+        runtime.serviceName = serviceName;
         this.emit(runtime);
         return;
       }
@@ -1006,7 +1025,7 @@ export class ProcessManager {
         runtime.healthFailures = 0;
         runtime.ready = true;
         runtime.state = 'running';
-        runtime.serviceName = proc.service;
+        runtime.serviceName = serviceName;
         runtime.pid = state.pid;
         runtime.external = false;
         runtime.ports = state.pid ? listeners.get(state.pid) ?? [] : [];
@@ -1021,6 +1040,7 @@ export class ProcessManager {
       runtime.pid = undefined;
       runtime.ports = [];
       runtime.errorHint = undefined;
+      runtime.serviceName = serviceName;
       this.emit(runtime);
       return;
     }

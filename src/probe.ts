@@ -37,7 +37,7 @@ export async function getListeners(): Promise<Map<number, number[]>> {
 }
 
 let processCache: { at: number; data: ProcInfo[] } = { at: 0, data: [] };
-let inFlight: Promise<ProcInfo[]> | null = null;
+let inFlight: Promise<ProcessTableSnapshot> | null = null;
 
 export interface ProcessTableSnapshot {
   data: ProcInfo[];
@@ -61,7 +61,7 @@ export function getProcessTable(maxAgeMs = 30000): Promise<ProcessTableSnapshot>
   if (processCache.data.length > 0 && now - processCache.at < maxAgeMs) {
     return Promise.resolve({ data: processCache.data, at: processCache.at });
   }
-  if (inFlight) return inFlight.then((data) => ({ data, at: processCache.at || Date.now() }));
+  if (inFlight) return inFlight;
 
   const script =
     '[Console]::OutputEncoding=[System.Text.Encoding]::UTF8;' +
@@ -96,6 +96,8 @@ export function getProcessTable(maxAgeMs = 30000): Promise<ProcessTableSnapshot>
       processCache = { at: Date.now(), data };
       return data;
     })
+    // 注意：这里必须返回 { data, at }，和缓存命中/in-flight 两条路径保持一致
+    .then((data) => ({ data, at: processCache.at }))
     .finally(() => {
       inFlight = null;
     });
