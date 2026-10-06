@@ -210,6 +210,25 @@ export default function AppDialog({ appId, onClose }: AppDialogProps) {
               </button>
             </div>
 
+            <details className="mb-2 rounded bg-gray-700/40 border border-gray-600/60">
+              <summary className="px-3 py-1.5 text-xs text-gray-300 cursor-pointer select-none">
+                启动命令怎么写？（点开看示例）
+              </summary>
+              <div className="px-3 pb-2 text-xs text-gray-400 space-y-1 leading-relaxed">
+                <p>
+                  · 直接写你在命令行里敲的那一行，工作目录就是上面选的那个目录；默认由 cmd 执行，
+                  所以参数、<code>&&</code>、<code>%USERPROFILE%</code> 这类环境变量都能用。
+                </p>
+                <p>· 路径带空格要加引号，否则会被拆成两个参数。</p>
+                <pre className="whitespace-pre overflow-x-auto px-2 py-1.5 bg-gray-900/60 rounded text-gray-300">{'python -m uvicorn app.main:app --host 0.0.0.0 --port 8000\nnpm run dev\nuv run python app.py\nnode bot.js\n"C:\\Program Files\\nodejs\\node.exe" server.js'}</pre>
+                <p>
+                  · 填了<b>端口</b>就按「端口有没有被监听」判断状态（手工启动的同一服务也能认出来）；
+                  没有端口就填<b>关键字</b>（如 <code>bot.js</code>），按命令行/进程名匹配。
+                </p>
+                <p>· 一个服务要跑多个进程（例如先跑迁移再起服务），点「添加进程」，按顺序启动。</p>
+              </div>
+            </details>
+
             <div className="space-y-3">
               {processes.map((proc, index) => (
                 <div key={proc.id} className="p-3 bg-gray-700/60 rounded space-y-2">
