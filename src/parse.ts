@@ -60,6 +60,32 @@ export function matchCommandLine(commandLine: string, keyword: string): boolean 
   return new RegExp(`(^|[\\s"'/\\\\])${escaped}`, 'i').test(commandLine);
 }
 
+/**
+ * Windows 自带命令（sc.exe / netstat / taskkill / where.exe）按 OEM 代码页输出，
+ * 中文系统上就是 GBK；只有 powershell.exe 那段我们强制成了 UTF-8。
+ * 所以先按 UTF-8 解，解出替换字符再按 GBK 解一次 —— 否则「拒绝访问」
+ * 这类提示在界面上会变成一圈乱码，根本看不出错在哪。
+ */
+export function decodeOutput(buf: Buffer): string {
+  const utf8 = buf.toString('utf8');
+  if (!utf8.includes('\uFFFD')) return utf8;
+  try {
+    return new TextDecoder('gbk').decode(buf);
+  } catch {
+    return utf8;
+  }
+}
+
+/**
+ * sc 的「权限不足」提示。
+ * 中文系统是「失败 5: 拒绝访问。」，英文系统是「FAILED 5: Access is denied.」，
+ * 两种都要认出来，才知道该弹 UAC 重试。
+ */
+export function isAccessDenied(output: string): boolean {
+  if (!output) return false;
+  return /(失败|FAILED)\s*5\b/i.test(output) || /拒绝访问|Access is denied/i.test(output);
+}
+
 /** 把 stderr 尾巴翻译成一句人话。 */
 export function summarizeError(stderrTail: string, exitCode: number | null): string {
   const tail = (stderrTail || '').trim();

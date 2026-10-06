@@ -20,7 +20,6 @@ import {
   isAlive,
   killTree,
   probeHttp,
-  controlService,
   queryServiceState,
   runFile,
   waitForExit,
@@ -29,6 +28,7 @@ import {
 import { inferPort, matchCommandLine, parsePortConflict, summarizeError } from './parse';
 import { loadStore } from './config';
 import { serviceIdForApp } from './serviceBuilder';
+import { controlServiceSmart } from './serviceInstaller';
 import { appendMetrics, type MetricSample } from './metrics';
 import { evaluatePreflight, expandEnvVars, firstToken, looksLikePath, parseModuleList, type PreflightIssue } from './preflight';
 
@@ -39,6 +39,7 @@ const TICK_RUNNING_MS = 6000;
 const TICK_IDLE_MS = 15000;
 /** 长期内存/CPU 采样落盘的间隔。 */
 const METRICS_INTERVAL_MS = 60000;
+
 /** 有就绪判据（端口/健康地址/关键字）时，默认多久没就绪就算启动失败。 */
 const READY_TIMEOUT_DEFAULT = 60000;
 /** 健康检查连续失败几次判定为异常。 */
@@ -391,7 +392,7 @@ export class ProcessManager {
 
       // Windows 服务托管的：让服务管理器去起，不直接拉进程
       if (proc.service) {
-        const result = await controlService(proc.service, 'start');
+        const result = await controlServiceSmart(proc.service, 'start');
         if (!result.ok) {
           throw new Error(`启动服务「${proc.service}」失败：${result.output || '可能需要管理员权限'}`);
         }
@@ -664,7 +665,7 @@ export class ProcessManager {
         clearTimeout(runtime.autoRestartTimer);
         runtime.autoRestartTimer = undefined;
       }
-      const result = await controlService(runtime.serviceName, 'stop');
+      const result = await controlServiceSmart(runtime.serviceName, 'stop');
       if (!result.ok) {
         runtime.state = 'error';
         runtime.errorHint = `停止服务「${runtime.serviceName}」失败：${result.output || '可能需要管理员权限'}`;

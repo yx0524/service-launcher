@@ -7,7 +7,7 @@ import { createTray, type TrayController } from './tray';
 import { isConfigReadable, loadStore, pruneLogs, saveStore, upsertApp, type WindowState } from './config';
 import { pruneMetrics } from './metrics';
 import { assetsDir, existingAsset } from './paths';
-import { installService, uninstallService } from './serviceInstaller';
+import { controlServiceSmart, installService, uninstallService } from './serviceInstaller';
 import type { ProcessStatus } from './types';
 
 if (started) {
@@ -41,12 +41,21 @@ let trayUpdateTimer: NodeJS.Timeout | null = null;
  * 命令行入口（调试/脚本用，和界面走同一套逻辑）：
  *   进程启动器.exe --service-install <appId>
  *   进程启动器.exe --service-uninstall <appId>
+ *   进程启动器.exe --service-control <appId> <start|stop>
  */
 function runServiceCli(): boolean {
   const installIndex = process.argv.indexOf('--service-install');
   const uninstallIndex = process.argv.indexOf('--service-uninstall');
+  const controlIndex = process.argv.indexOf('--service-control');
   const isInstall = installIndex >= 0;
-  const appId = isInstall ? process.argv[installIndex + 1] : uninstallIndex >= 0 ? process.argv[uninstallIndex + 1] : undefined;
+  const isControl = controlIndex >= 0;
+  const appId = isInstall
+    ? process.argv[installIndex + 1]
+    : uninstallIndex >= 0
+      ? process.argv[uninstallIndex + 1]
+      : isControl
+        ? process.argv[controlIndex + 1]
+        : undefined;
   if (!appId) return false;
 
   void (async () => {
@@ -56,6 +65,17 @@ function runServiceCli(): boolean {
       app.exit(2);
       return;
     }
+
+    // 启停服务：只动服务状态，不改配置
+    if (isControl) {
+      const action = process.argv[controlIndex + 2] === 'stop' ? 'stop' : 'start';
+      const serviceId = appConfig.processes[0]?.service ?? '';
+      const outcome = await controlServiceSmart(serviceId, action);
+      console.log(JSON.stringify({ success: outcome.ok, output: outcome.output, serviceId }));
+      app.exit(outcome.ok ? 0 : 1);
+      return;
+    }
+
     const result = isInstall
       ? await installService(appConfig, appConfig.processes[0], assetsDir())
       : await uninstallService(appConfig.processes[0]?.service ?? '');

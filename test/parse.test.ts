@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  decodeOutput,
   findPidOnPort,
+  isAccessDenied,
   inferPort,
   matchCommandLine,
   parseListeners,
@@ -57,4 +59,20 @@ test('summarizeError 给出人话提示', () => {
   assert.match(summarizeError('Traceback (most recent call last): ...', 1), /Traceback/);
   assert.equal(summarizeError('', 3), '退出码 3');
   assert.equal(summarizeError('', 0), '未知错误');
+});
+
+test('isAccessDenied 认得中英文两种「权限不足」', () => {
+  assert.equal(isAccessDenied('[SC] StartService: OpenService 失败 5: 拒绝访问。'), true);
+  assert.equal(isAccessDenied('[SC] StartService: OpenService FAILED 5:\r\n\r\nAccess is denied.'), true);
+  assert.equal(isAccessDenied('指定的服务未安装。'), false);
+  assert.equal(isAccessDenied(''), false);
+});
+
+test('decodeOutput 把 sc.exe 的 GBK 输出还原成中文（旧行为是一圈乱码）', () => {
+  // 「失败 5: 拒绝访问。」按 GBK 编码 —— sc.exe 在中文系统上就是这么输出的
+  const gbk = Buffer.from([0xca, 0xa7, 0xb0, 0xdc, 0x20, 0x35, 0x3a, 0x20, 0xbe, 0xdc, 0xbe, 0xf8, 0xb7, 0xc3, 0xce, 0xca, 0xa1, 0xa3]);
+  assert.equal(decodeOutput(gbk), '失败 5: 拒绝访问。');
+  // 纯 ASCII / 已经是 UTF-8 的内容不乱动
+  assert.equal(decodeOutput(Buffer.from('FAILED 1060', 'utf8')), 'FAILED 1060');
+  assert.equal(decodeOutput(Buffer.from('中文 UTF-8 输出', 'utf8')), '中文 UTF-8 输出');
 });

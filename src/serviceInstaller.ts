@@ -3,8 +3,9 @@ import path from 'node:path';
 import { app } from 'electron';
 import type { AppConfig, ProcessConfig } from './types';
 import { buildServiceXml, serviceIdForApp, splitCommand } from './serviceBuilder';
-import { queryServiceState, runFile } from './probe';
+import { controlService, queryServiceState, runFile } from './probe';
 import { expandEnvVars } from './preflight';
+import { isAccessDenied } from './parse';
 
 export interface ServiceOpResult {
   success: boolean;
@@ -64,8 +65,8 @@ function writeSelfElevatingScript(payloadLines: string[]): string {
   return file;
 }
 
-async function runScript(scriptPath: string, timeoutMs = 120000): Promise<void> {
-  await runFile('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', scriptPath], undefined, timeoutMs);
+async function runScript(scriptPath: string, timeoutMs = 120000): Promise<{ ok: boolean; output: string }> {
+  return runFile('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', scriptPath], undefined, timeoutMs);
 }
 
 /**
@@ -175,6 +176,74 @@ export async function uninstallService(serviceId: string): Promise<ServiceOpResu
   const state = await queryServiceState(serviceId);
   if (state.exists) return { success: false, error: '服务还在，可能拒绝了管理员授权', serviceId };
   return { success: true, serviceId };
+}
+
+/**
+ * 启停 Windows 服务：先按普通权限来，被系统拒绝（失败 5 / Access is denied）
+ * 再弹一次 UAC 用管理员身份重试。界面上的「启动 / 停止」都走这里。
+ */
+export async function controlServiceSmart(
+  serviceId: string,
+  action: 'start' | 'stop'
+): Promise<{ ok: boolean; output: string }> {
+  const result = await controlService(serviceId, action);
+  if (result.ok || !isAccessDenied(result.output)) return result;
+  return controlServiceElevated(serviceId, action);
+}
+
+/**
+ * 用管理员权限启停 Windows 服务。
+ *
+ * 普通用户对服务通常只有「查」的权限，没有 SERVICE_START/SERVICE_STOP，
+ * 直接 sc start 会得到「OpenService 失败 5：拒绝访问」。
+ * 这里自己弹一次 UAC 再试，并且以 SCM 的最终状态为准 ——
+ * 崩溃重启循环里的服务会一直停在「启动中」，那种情况要报失败而不是成功。
+ */
+export async function controlServiceElevated(
+  serviceId: string,
+  action: 'start' | 'stop'
+): Promise<{ ok: boolean; output: string }> {
+  if (!serviceId.trim()) return { ok: false, output: '没有服务名' };
+
+  const logPath = path.join(app.getPath('temp'), `launcher-svc-${action}-${Date.now()}.log`);
+  const scriptPath = writeSelfElevatingScript([
+    `& sc.exe ${action} '${serviceId.replace(/'/g, "''")}' 2>&1 | Out-File -LiteralPath '${logPath.replace(/'/g, "''")}' -Encoding utf8`,
+  ]);
+  try {
+    await runScript(scriptPath, 120000);
+  } finally {
+    try {
+      fs.rmSync(path.dirname(scriptPath), { recursive: true, force: true });
+    } catch {
+      /* ignore */
+    }
+  }
+
+  let output = '';
+  try {
+    output = fs.readFileSync(logPath, 'utf8').trim();
+  } catch {
+    /* 没写出来就算了 */
+  }
+  try {
+    fs.rmSync(logPath, { force: true });
+  } catch {
+    /* ignore */
+  }
+
+  const want = action === 'start';
+  const deadline = Date.now() + (want ? 12000 : 20000);
+  let state = await queryServiceState(serviceId);
+  while (state.exists && state.running !== want && Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 500));
+    state = await queryServiceState(serviceId);
+  }
+  if (!state.exists) return { ok: false, output: output || `服务「${serviceId}」不存在` };
+  if (state.running === want) return { ok: true, output };
+  return {
+    ok: false,
+    output: output || (want ? '服务已接受启动请求，但没真正跑起来（看服务日志目录）' : '服务没有停下来'),
+  };
 }
 
 /** 打开某个服务的日志目录（方便排查为什么起不来）。 */

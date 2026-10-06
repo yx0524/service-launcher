@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process';
 import http from 'node:http';
 import https from 'node:https';
-import { parseListeners, parseScQuery } from './parse';
+import { decodeOutput, parseListeners, parseScQuery } from './parse';
 
 export interface ProcInfo {
   pid: number;
@@ -19,8 +19,8 @@ function run(file: string, args: string[], timeoutMs = 15000): Promise<string> {
     execFile(
       file,
       args,
-      { windowsHide: true, timeout: timeoutMs, maxBuffer: 64 * 1024 * 1024, encoding: 'utf8' },
-      (err, stdout) => resolve(err && !stdout ? '' : stdout || '')
+      { windowsHide: true, timeout: timeoutMs, maxBuffer: 64 * 1024 * 1024, encoding: 'buffer' },
+      (err, stdout) => resolve(!stdout || stdout.length === 0 ? '' : decodeOutput(stdout))
     );
   });
 }
@@ -183,9 +183,9 @@ export function runFile(
     execFile(
       file,
       args,
-      { cwd, windowsHide: true, timeout: timeoutMs, encoding: 'utf8', maxBuffer: 4 * 1024 * 1024 },
+      { cwd, windowsHide: true, timeout: timeoutMs, encoding: 'buffer', maxBuffer: 4 * 1024 * 1024 },
       (error, stdout, stderr) => {
-        const output = `${stdout || ''}${stderr || ''}`.trim();
+        const output = `${decodeOutput(stdout ?? Buffer.alloc(0))}${decodeOutput(stderr ?? Buffer.alloc(0))}`.trim();
         resolve({ ok: !error, output });
       }
     );
