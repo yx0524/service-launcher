@@ -57,6 +57,41 @@ export function splitCommand(command: string): { executable: string; args: strin
   return { executable: trimmed.slice(0, spaceIndex), args: trimmed.slice(spaceIndex + 1).trim() };
 }
 
+/**
+ * 把「选中的脚本文件」拼成一条启动命令（给编辑框里的「选脚本」按钮用）。
+ *
+ * 只按扩展名来，不猜内容：bat/cmd 直接跑（cmd 会执行它）、vbs 走 wscript、
+ * ps1 走 powershell、py 走 python、js 走 node，其余（exe 等）原样跑。
+ * 文件在工作目录里就写相对路径，这样整个目录搬走也不用改配置。
+ */
+export function commandFromScript(file: string, workingDir: string): string {
+  const normalizedFile = file.replace(/\//g, '\\');
+  const dir = workingDir.replace(/\//g, '\\').replace(/\\+$/, '');
+  let target = normalizedFile;
+  if (dir && normalizedFile.toLowerCase().startsWith(`${dir.toLowerCase()}\\`)) {
+    target = normalizedFile.slice(dir.length + 1);
+  }
+  const quoted = `"${target}"`;
+  const name = target.split('\\').pop() ?? target;
+  const dot = name.lastIndexOf('.');
+  const ext = dot > 0 ? name.slice(dot + 1).toLowerCase() : '';
+
+  switch (ext) {
+    case 'ps1':
+      return `powershell -NoProfile -ExecutionPolicy Bypass -File ${quoted}`;
+    case 'vbs':
+      return `wscript ${quoted}`;
+    case 'py':
+      return `python ${quoted}`;
+    case 'js':
+    case 'mjs':
+    case 'cjs':
+      return `node ${quoted}`;
+    default:
+      return quoted;
+  }
+}
+
 /** 生成 WinSW 的 XML 配置。 */
 export function buildServiceXml(spec: ServiceSpec): string {
   return `<?xml version="1.0" encoding="utf-8"?>

@@ -298,6 +298,26 @@ export function registerIpc(getWindow: GetWindow, manager: ProcessManager): void
     return result.canceled || result.filePaths.length === 0 ? null : result.filePaths[0];
   });
 
+  /** 选一个启动脚本，用来自动拼「启动命令」（bat/cmd/ps1/vbs/exe/py/js）。 */
+  ipcMain.handle('select-script-file', async (_e, defaultPath?: string) => {
+    const win = getWindow();
+    const options = {
+      defaultPath: defaultPath && fs.existsSync(defaultPath) ? defaultPath : undefined,
+      properties: ['openFile'] as const,
+      filters: [
+        {
+          name: '启动脚本',
+          extensions: ['bat', 'cmd', 'ps1', 'vbs', 'exe', 'py', 'js', 'mjs', 'cjs'],
+        },
+        { name: '所有文件', extensions: ['*'] },
+      ],
+    };
+    const result = win
+      ? await dialog.showOpenDialog(win, { ...options, properties: ['openFile'] })
+      : await dialog.showOpenDialog({ ...options, properties: ['openFile'] });
+    return result.canceled || result.filePaths.length === 0 ? null : result.filePaths[0];
+  });
+
   /** 打开日志落盘目录（没有就建一个，避免打开失败）。 */
   ipcMain.handle('open-logs-dir', async (): Promise<SimpleResult> => {
     try {

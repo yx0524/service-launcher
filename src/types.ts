@@ -198,6 +198,8 @@ export interface ElectronAPI {
   killPid: (pid: number) => Promise<SimpleResult>;
 
   selectDirectory: () => Promise<string | null>;
+  /** 选一个启动脚本（bat/cmd/ps1/vbs/exe/py/js），用于自动拼启动命令。 */
+  selectScriptFile: (defaultPath?: string) => Promise<string | null>;
   openPath: (target: string) => Promise<SimpleResult>;
   openUrl: (url: string) => Promise<void>;
   saveTextFile: (content: string, defaultName: string) => Promise<string | null>;

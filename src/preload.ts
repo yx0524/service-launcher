@@ -33,6 +33,7 @@ const api: ElectronAPI = {
   killPid: (pid) => ipcRenderer.invoke('kill-pid', pid),
 
   selectDirectory: () => ipcRenderer.invoke('select-directory'),
+  selectScriptFile: (defaultPath) => ipcRenderer.invoke('select-script-file', defaultPath),
   openPath: (target) => ipcRenderer.invoke('open-path', target),
   openUrl: (url) => ipcRenderer.invoke('open-url', url),
   saveTextFile: (content, defaultName) => ipcRenderer.invoke('save-text-file', content, defaultName),

@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { FolderOpen, Plus, Trash2, X } from 'lucide-react';
+import { FileCode2, FolderOpen, Plus, Trash2, X } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
 import type { AppConfig, AppKind, ProcessConfig } from '../types';
+import { commandFromScript } from '../../serviceBuilder';
 
 interface AppDialogProps {
   appId: string | null;
@@ -251,12 +252,26 @@ export default function AppDialog({ appId, onClose }: AppDialogProps) {
                     )}
                   </div>
 
-                  <input
-                    className={inputClass}
-                    value={proc.command}
-                    onChange={(e) => patchProcess(proc.id, { command: e.target.value })}
-                    placeholder="python -m uvicorn app:app --host 0.0.0.0 --port 8000"
-                  />
+                  <div className="flex gap-2">
+                    <input
+                      className={inputClass}
+                      value={proc.command}
+                      onChange={(e) => patchProcess(proc.id, { command: e.target.value })}
+                      placeholder="python -m uvicorn app:app --host 0.0.0.0 --port 8000"
+                    />
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const file = await window.electronAPI.selectScriptFile(workingDir.trim() || undefined);
+                        if (!file) return;
+                        patchProcess(proc.id, { command: commandFromScript(file, workingDir.trim()) });
+                      }}
+                      className="px-2 py-1 bg-gray-600 hover:bg-gray-500 text-white rounded text-xs flex items-center gap-1 flex-shrink-0"
+                      title="选一个 .bat / .ps1 / .exe / .py / .js，自动拼成启动命令"
+                    >
+                      <FileCode2 size={14} /> 选脚本
+                    </button>
+                  </div>
 
                   {kind === 'service' && (
                   <>
