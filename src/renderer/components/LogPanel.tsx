@@ -23,6 +23,7 @@ export default function LogPanel() {
   const autoScrollSetting = useAppStore((s) => s.settings.autoScrollLogs);
   const toggleLogPanel = useAppStore((s) => s.toggleLogPanel);
   const clearLogs = useAppStore((s) => s.clearLogs);
+  const prependLogs = useAppStore((s) => s.prependLogs);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const previousCountRef = useRef(0);
@@ -57,6 +58,19 @@ export default function LogPanel() {
   };
 
   useEffect(() => setAutoScroll(autoScrollSetting), [autoScrollSetting]);
+
+  // 内存里没有日志时，把落盘的历史读回来（启动器重启过、或服务不是启动器拉起的）
+  useEffect(() => {
+    if (!selectedAppId) return;
+    if ((logsByApp[selectedAppId] ?? EMPTY_LOGS).length > 0) return;
+    let cancelled = false;
+    void window.electronAPI.readAppLogs(selectedAppId).then((entries) => {
+      if (!cancelled) prependLogs(selectedAppId, entries);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedAppId, logsByApp, prependLogs]);
 
   useEffect(() => {
     previousCountRef.current = 0;
@@ -244,9 +258,17 @@ export default function LogPanel() {
 
           <div ref={scrollRef} className="flex-1 overflow-y-auto scrollbar-thin p-3 space-y-2">
             {visible.length === 0 && (
-              <p className="text-center text-gray-500 text-sm py-8">
-                {logs.length === 0 ? '暂无日志' : '没有匹配的日志'}
-              </p>
+              <div className="text-center text-gray-500 text-sm py-8 space-y-1">
+                <p>{logs.length === 0 ? '暂无日志' : '没有匹配的日志'}</p>
+                {logs.length === 0 && (
+                  <p className="text-xs text-gray-600 leading-relaxed">
+                    启动器只能抓到「自己拉起来的」进程的输出。
+                    <br />
+                    外部启动的服务、以及 Windows 服务托管的进程抓不到 —— 那两种请用右键菜单里的
+                    「打开服务日志」，或点上面的文件夹图标看落盘日志目录。
+                  </p>
+                )}
+              </div>
             )}
             {visible.map((log) => (
               <div key={log.seq ?? `${log.timestamp}-${log.appId}-${log.processId}`}>

@@ -205,6 +205,8 @@ export interface ElectronAPI {
   saveTextFile: (content: string, defaultName: string) => Promise<string | null>;
   /** 打开日志落盘目录。 */
   openLogsDir: () => Promise<SimpleResult>;
+  /** 读某个服务落盘的日志尾部（内存里没有时用）。 */
+  readAppLogs: (appId: string, maxLines?: number) => Promise<AppLogEntry[]>;
 
   exportConfig: (options?: { groupId?: string | null; appIds?: string[] }) => Promise<string | null>;
   importConfig: () => Promise<ImportResult>;

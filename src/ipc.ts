@@ -30,6 +30,7 @@ import { killTree, runFile } from './probe';
 import { readMetrics } from './metrics';
 import { installService, serviceLogDir, uninstallService } from './serviceInstaller';
 import { assetsDir } from './paths';
+import { readLogTail } from './logFiles';
 
 type GetWindow = () => BrowserWindow | null;
 
@@ -316,6 +317,27 @@ export function registerIpc(getWindow: GetWindow, manager: ProcessManager): void
       ? await dialog.showOpenDialog(win, { ...options, properties: ['openFile'] })
       : await dialog.showOpenDialog({ ...options, properties: ['openFile'] });
     return result.canceled || result.filePaths.length === 0 ? null : result.filePaths[0];
+  });
+
+  /**
+   * 读某个服务落盘的日志尾部。
+   * 内存里的日志只在本次运行有效，启动器重启过、或者这个服务是外部/服务托管的，
+   * 界面上就会一片空白，其实文件里有 —— 这里按需把最后几百行读回来。
+   */
+  ipcMain.handle('read-app-logs', async (_e, appId: string, maxLines = 600) => {
+    try {
+      const dir = path.join(app.getPath('userData'), 'logs', appId);
+      const files = fs
+        .readdirSync(dir)
+        .filter((name) => name.endsWith('.log'))
+        .map((name) => ({ name, mtime: fs.statSync(path.join(dir, name)).mtimeMs }))
+        .sort((a, b) => a.mtime - b.mtime);
+      const newest = files[files.length - 1];
+      if (!newest) return [];
+      return readLogTail(path.join(dir, newest.name), appId, maxLines);
+    } catch {
+      return [];
+    }
   });
 
   /** 打开日志落盘目录（没有就建一个，避免打开失败）。 */

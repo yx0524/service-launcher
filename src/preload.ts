@@ -38,6 +38,7 @@ const api: ElectronAPI = {
   openUrl: (url) => ipcRenderer.invoke('open-url', url),
   saveTextFile: (content, defaultName) => ipcRenderer.invoke('save-text-file', content, defaultName),
   openLogsDir: () => ipcRenderer.invoke('open-logs-dir'),
+  readAppLogs: (appId, maxLines) => ipcRenderer.invoke('read-app-logs', appId, maxLines),
 
   exportConfig: (options) => ipcRenderer.invoke('export-config', options),
   importConfig: () => ipcRenderer.invoke('import-config'),

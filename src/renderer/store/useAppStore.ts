@@ -43,6 +43,8 @@ interface AppStore {
   hydrateStatuses: () => Promise<void>;
   applyStatus: (status: ProcessStatus) => void;
   appendLog: (entry: AppLogEntry) => void;
+  /** 把落盘读回来的历史日志插到最前面（只在这条服务内存里还没日志时用）。 */
+  prependLogs: (appId: string, entries: AppLogEntry[]) => void;
   clearLogs: (appId: string) => void;
 
   setSettings: (settings: AppSettings) => void;
@@ -158,6 +160,16 @@ export const useAppStore = create<AppStore>((set) => {
     clearLogs: (appId) => {
       logBuffer = logBuffer.filter((entry) => entry.appId !== appId);
       set((state) => ({ logs: { ...state.logs, [appId]: [] } }));
+    },
+
+    prependLogs: (appId, entries) => {
+      if (entries.length === 0) return;
+      // 历史日志用负数序号，保证排在这一轮实时日志前面
+      let seq = -entries.length;
+      const history = entries.map((entry) => ({ ...entry, seq: seq++ }));
+      set((state) => ({
+        logs: { ...state.logs, [appId]: [...history, ...(state.logs[appId] ?? [])] },
+      }));
     },
 
     setSettings: (settings) => set({ settings }),
