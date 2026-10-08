@@ -445,6 +445,25 @@ function checkUserDataWritable(): string | null {
   }
 }
 
+/**
+ * 托盘「退出」的二次确认。
+ * 它常驻托盘，右键菜单点一下「退出」就没了，太容易误触；
+ * 而且退出会先停掉启动器自己拉起的服务，值得问一句。
+ */
+async function confirmQuit(): Promise<void> {
+  const result = await dialog.showMessageBox({
+    type: 'question',
+    buttons: ['退出', '取消'],
+    defaultId: 1,
+    cancelId: 1,
+    noLink: true,
+    title: '进程启动器',
+    message: '要退出启动器吗？',
+    detail: '会先停掉「由启动器启动的」服务；手工启动的服务、以及 Windows 服务托管的机器人不受影响。随时可以再打开。',
+  });
+  if (result.response === 0) void quitApplication();
+}
+
 async function quitApplication(): Promise<void> {
   if (quitting) return;
   quitting = true;
@@ -472,7 +491,7 @@ app.whenReady().then(() => {
   noteLifecycle(`启动（PID ${process.pid}，${process.execPath}）`);
   tray = createTray({
     showWindow,
-    quit: () => void quitApplication(),
+    quit: () => void confirmQuit(),
     startAll: () => void startAllApps(),
     stopAll: () => {
       void manager.stopAll().then(() => scheduleTrayUpdate());
