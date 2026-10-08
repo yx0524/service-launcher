@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import { parseLogText, readLogTail } from '../src/logFiles.ts';
+import { noteWriteFailure, parseLogText, readLogTail } from '../src/logFiles.ts';
 
 const SAMPLE = [
   '[23:35:14] [system] [cc-connect.exe] 已启动（PID 37996）',
@@ -37,5 +37,15 @@ test('readLogTail：读文件尾部，按文件名定日期', () => {
   assert.equal(readLogTail(file, 'cc-connect', 2).length, 1);
   // 文件不存在不炸
   assert.deepEqual(readLogTail(path.join(dir, 'nope.log'), 'x'), []);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('noteWriteFailure：失败要留证据，写不进去也不能抛', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'werr-'));
+  noteWriteFailure(dir, 'metrics', new Error('EPERM: operation not permitted'));
+  const text = fs.readFileSync(path.join(dir, 'write-errors.log'), 'utf-8');
+  assert.match(text, /metrics: EPERM: operation not permitted/);
+  // 目录本身不可用时只记录、不抛异常
+  assert.doesNotThrow(() => noteWriteFailure('', 'log', new Error('x')));
   fs.rmSync(dir, { recursive: true, force: true });
 });

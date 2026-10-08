@@ -415,9 +415,40 @@ async function restartAsAdmin(): Promise<{ success: boolean; error?: string }> {
   }
 }
 
+/**
+ * 记一行生命周期日志。
+ * 下次再有人问「它怎么自己没了」：这里写着「正常退出」就是被托盘/快捷键关的，
+ * 什么都没有就是被强杀/系统结束的 —— 比翻事件日志快。
+ */
+function noteLifecycle(event: string): void {
+  try {
+    const dir = path.join(app.getPath('userData'), 'logs');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.appendFileSync(path.join(dir, '_session.log'), `[${new Date().toLocaleString()}] ${event}\n`, 'utf-8');
+  } catch {
+    /* 记不上就算了 */
+  }
+}
+
+/**
+ * 启动自检：数据目录写不进去的话，日志、内存曲线、配置修改都会「静默失效」，
+ * 界面上只剩曲线不动、日志空白。与其让用户猜，不如开机就说清楚。
+ */
+function checkUserDataWritable(): string | null {
+  const file = path.join(app.getPath('userData'), '.write-probe');
+  try {
+    fs.writeFileSync(file, 'ok', 'utf-8');
+    fs.rmSync(file, { force: true });
+    return null;
+  } catch (error) {
+    return error instanceof Error ? error.message : String(error);
+  }
+}
+
 async function quitApplication(): Promise<void> {
   if (quitting) return;
   quitting = true;
+  noteLifecycle(`正常退出（托盘菜单或快捷键，PID ${process.pid}）`);
   manager.beginShutdown();
   manager.stopLoop();
   tray?.destroy();
@@ -438,6 +469,7 @@ app.whenReady().then(() => {
   if (runServiceCli()) return;
 
   mainWindow = createWindow();
+  noteLifecycle(`启动（PID ${process.pid}，${process.execPath}）`);
   tray = createTray({
     showWindow,
     quit: () => void quitApplication(),
@@ -465,6 +497,17 @@ app.whenReady().then(() => {
     },
   });
   registerIpc(() => mainWindow, manager);
+
+  const writeError = checkUserDataWritable();
+  if (writeError) {
+    const options = {
+      type: 'warning' as const,
+      title: '进程启动器',
+      message: '数据目录写不进去',
+      detail: `${app.getPath('userData')}\n\n${writeError}\n\n日志、内存曲线、配置修改都保存不了。请检查该目录权限（或杀毒软件的拦截），也可以先用「更多 → 以管理员身份重启」试试。`,
+    };
+    void (mainWindow ? dialog.showMessageBox(mainWindow, options) : dialog.showMessageBox(options));
+  }
 
   ipcMain.on('renderer-ready', () => {
     void runAutoStart();

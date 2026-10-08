@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { app } from 'electron';
 import { bucketize, type MetricPoint } from './metricsMath';
+import { noteWriteFailure } from './logFiles';
 
 export type { MetricPoint } from './metricsMath';
 
@@ -36,8 +37,9 @@ export function appendMetrics(samples: MetricSample[]): void {
     fs.mkdirSync(dir, { recursive: true });
     const line: MetricLine = { t: Date.now(), items: useful };
     fs.appendFileSync(path.join(dir, `${dayKey(new Date())}.jsonl`), `${JSON.stringify(line)}\n`, 'utf-8');
-  } catch {
-    /* 采样落盘失败不影响主流程 */
+  } catch (error) {
+    // 采样落盘失败不影响主流程，但必须留下证据，否则只能看到曲线不动了
+    noteWriteFailure(metricsDir(), 'metrics', error);
   }
 }
 

@@ -34,6 +34,28 @@ export function parseLogText(text: string, appId: string, day: Date): AppLogEntr
   return out;
 }
 
+/**
+ * 落盘失败时留个证据。
+ * 日志/指标原来都是 catch 里空着 —— 权限不对、文件被占用、磁盘满，
+ * 界面上一点提示都没有，只能看着「曲线不动了」猜。这里单独写一个诊断文件，
+ * 它跟出问题的文件不是同一个，所以「单个文件被锁」这种情况照样能记下来。
+ */
+export function noteWriteFailure(dir: string, scope: string, error: unknown): void {
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+    const file = path.join(dir, 'write-errors.log');
+    try {
+      if (fs.statSync(file).size > 200 * 1024) fs.rmSync(file, { force: true });
+    } catch {
+      /* 没有就不用管 */
+    }
+    const message = error instanceof Error ? error.message : String(error);
+    fs.appendFileSync(file, `[${new Date().toLocaleString()}] ${scope}: ${message}\n`, 'utf-8');
+  } catch {
+    /* 连诊断文件都写不进去，就只能靠启动时的可写性自检报错了 */
+  }
+}
+
 /** 读日志文件尾部（最多 maxLines 行）；文件不存在或读不动就返回空数组。 */
 export function readLogTail(file: string, appId: string, maxLines = 600): AppLogEntry[] {
   let text: string;

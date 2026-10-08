@@ -30,6 +30,7 @@ import { loadStore } from './config';
 import { serviceIdForApp } from './serviceBuilder';
 import { controlServiceSmart } from './serviceInstaller';
 import { appendMetrics, type MetricSample } from './metrics';
+import { noteWriteFailure } from './logFiles';
 import { evaluatePreflight, expandEnvVars, firstToken, looksLikePath, parseModuleList, type PreflightIssue } from './preflight';
 
 /** 轮询节奏：有服务在启动就快问，都稳定了就慢问，全停了就问得很慢。 */
@@ -1313,8 +1314,9 @@ export class ProcessManager {
       }
       const line = `[${new Date(entry.timestamp).toLocaleTimeString()}] [${entry.type}] [${entry.processName}] ${entry.content.replace(/\s+$/, '')}\n`;
       fs.appendFileSync(file, line, 'utf-8');
-    } catch {
-      /* 落盘失败不影响运行 */
+    } catch (error) {
+      // 落盘失败不影响运行，但得留证据（权限/占用/磁盘满都可能是原因）
+      noteWriteFailure(path.join(app.getPath('userData'), 'logs'), 'log', error);
     }
   }
 }
